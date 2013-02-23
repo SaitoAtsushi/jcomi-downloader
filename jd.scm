@@ -117,6 +117,10 @@
                 :Cookie #`"_J-COMIC_=,|cookie|")
     body))
 
+(define (usage cmd)
+  (print "usage: " (sys-basename cmd) " id ...")
+  (exit))
+
 (define (jcomi number)
   (let*-values ([(data cookie) (get number)]
                 [(fs) (files data)]
