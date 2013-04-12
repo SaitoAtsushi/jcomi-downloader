@@ -2,6 +2,10 @@
 ;;; -*- mode:gauche; coding: utf-8 -*-
 ;;; Author: SAITO Atsushi
 
+;;; set your acount
+(define *id* "set your id")
+(define *pass* "set your password")
+
 ;;; set your filesystem encode
 (define *fsencode*
   (cond-expand (gauche.os.windows 'Shift_JIS)
@@ -17,6 +21,7 @@
 (use gauche.parameter)
 (use gauche.charconv)
 (use util.queue)
+(use rfc.uri)
 
 (add-load-path "." :relative)
 (use zip-archive)
@@ -44,11 +49,40 @@
 (define (body->app body)
   ((#/\/murasame\/app.js\?V=[^\"]+/ body) 0))
 
+(define session-id (make-parameter #f))
+
+(define (login id password)
+  (let1 post-data #`"_method=POST&data%5BUser%5D%5Bid%5D=,(uri-encode-string *id*)&data%5BUser%5D%5Bpass%5D=,(uri-encode-string *pass*)&data%5BUser%5D%5Bkeep%5D=0&data%5BUser%5D%5Bkeep%5D=1"
+    (let*-values
+        ([(status header1 body)
+          (http-post "www.j-comi.jp" "/userlogin/index/"
+                     post-data
+                     :Content-Type "application/x-www-form-urlencoded"
+                     :secure #t
+                     :redirect-handler #f)]
+         [(status header2 body)
+          (http-get "r18.j-comi.jp" "/attention/r18/yes"
+                    :Referer "http://r18.j-comi.jp/attention/r18vw"
+                    :redirect-handler #f
+                    :Cookie (construct-request-cookie
+                             (header->cookies header1)))])
+      (header->cookies (append header2 header1)))))
+
+(define (with-session id password thunk)
+  (parameterize ((session-id (login id password)))
+    (thunk)))
+
 (define (get number)
   (let*-values
       ([(status header body)
-        (http-get "vw.j-comi.jp" #`"/murasame/view/,|number|/p:1")]
-       [(cookies) (header->cookies header)]
+        (http-get "vw.j-comi.jp" #`"/murasame/view/,|number|/p:1"
+                  :Referer "http://r18.j-comi.jp/attention/r18vw"
+                  :redirect-handler #t
+                  :Cookie (construct-request-cookie (session-id))
+                  )]
+       [(cookies) (append
+                   (header->cookies header)
+                   (session-id))]
        [(dataset) (body->dataset body)]
        [(s h b)
         (http-get "vw.j-comi.jp" (body->app body)
@@ -141,4 +175,6 @@
   (guard (e ((condition-has-type? e <error>)
              (display (~ e 'message))))
     (when (> 2 (length args)) (usage (car args)))
-    (for-each (compose jcomi) (cdr args))))
+    (with-session *id* *pass*
+      (lambda()
+        (for-each (compose jcomi) (cdr args))))))
