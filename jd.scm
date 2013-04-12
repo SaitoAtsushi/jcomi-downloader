@@ -22,6 +22,7 @@
 (use gauche.charconv)
 (use util.queue)
 (use rfc.uri)
+(use gauche.parseopt)
 
 (add-load-path "." :relative)
 (use zip-archive)
@@ -152,7 +153,8 @@
     body))
 
 (define (usage cmd)
-  (print "usage: " (sys-basename cmd) " id ...")
+  (print "usage: " (sys-basename cmd) "[options] [id] ...")
+  (print "Options:\n  --listfile file   reading list from file.")
   (exit))
 
 (define (jcomi number)
@@ -171,10 +173,16 @@
          #`"[,(authors data)] ,(title data),|vols|.zip")))
      (map (^[x] (list (car x) (cdr x))) d))))
 
+(define file->list (cut call-with-input-file <> (pa$ port->list read-line)))
+
 (define (main args)
-  (guard (e ((condition-has-type? e <error>)
-             (display (~ e 'message))))
-    (when (> 2 (length args)) (usage (car args)))
-    (with-session *id* *pass*
-      (lambda()
-        (for-each (compose jcomi) (cdr args))))))
+  (let-args (cdr args)
+      ((listfile  "l|listfile=s"  #f)
+       (help  "h|help" => (cut usage (car args)))
+       . targets)
+    (let ((targets (if listfile (file->list listfile) targets)))
+      (guard (e ((condition-has-type? e <error>)
+                 (display (~ e 'message))))
+        (with-session *id* *pass*
+          (lambda()
+            (for-each (compose jcomi) targets)))))))
