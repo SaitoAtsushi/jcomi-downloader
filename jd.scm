@@ -6,11 +6,6 @@
 (define *id* "set your id")
 (define *pass* "set your password")
 
-;;; set your filesystem encode
-(define *fsencode*
-  (cond-expand (gauche.os.windows 'Shift_JIS)
-               (else 'utf8)))
-
 (use srfi-1)
 (use srfi-11)
 (use srfi-19)
@@ -132,9 +127,6 @@
   (let1 m (#/^http:\/\/([^\/]+)(\/.+)$/ url)
     (values (m 1) (m 2))))
 
-(define (fsencode str)
-  (ces-convert str (gauche-character-encoding) *fsencode*))
-
 (define (sanitize title)
   (regexp-replace-all #/[\/()"?<>|:;\r\n]/ title ""))
 
@@ -166,11 +158,10 @@
                         (^[x] (cons x (download-img domain path x cookie)))
                         fs))])
     (zip-encode
-     (fsencode
       (sanitize
        (let* ((vol (volume data))
               (vols (if (eq? 'null vol) "" #`" 第,|vol|巻")))
-         #`"[,(authors data)] ,(title data),|vols|.zip")))
+         #`"[,(authors data)] ,(title data),|vols|.zip"))
      (map (^[x] (list (car x) (cdr x))) d))))
 
 (define file->list (cut call-with-input-file <> (pa$ port->list read-line)))
