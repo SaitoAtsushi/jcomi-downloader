@@ -15,6 +15,7 @@
 (use rfc.zlib)
 (use gauche.parameter)
 (use gauche.charconv)
+(use gauche.collection)
 (use util.queue)
 (use rfc.uri)
 (use gauche.parseopt)
@@ -26,7 +27,9 @@
   (assoc-ref obj key))
 
 (define (construct-request-cookie lst)
-  (string-join (map (^[x] (string-append (car x) "=" (cdr x))) lst) "; "))
+  (let1 u (map (lambda(x) (car (last-pair x)))
+               (group-collection lst :key car :test string=?))
+    (string-join (map (^[x] (string-append (car x) "=" (cdr x))) u) "; ")))
 
 (define (header->cookies header)
   (filter-map
@@ -48,17 +51,17 @@
 (define session-id (make-parameter #f))
 
 (define (login id password)
-  (let1 post-data #`"_method=POST&data%5BUser%5D%5Bid%5D=,(uri-encode-string *id*)&data%5BUser%5D%5Bpass%5D=,(uri-encode-string *pass*)&data%5BUser%5D%5Bkeep%5D=0&data%5BUser%5D%5Bkeep%5D=1"
+  (let1 post-data #`"_method=POST&data%5BUser%5D%5Bemail%5D=,(uri-encode-string *id*)&data%5BUser%5D%5Bpasswd%5D=,(uri-encode-string *pass*)&data%5BUser%5D%5Breferer%5D=1&data%5BUser%5D%5Bkeep%5D=0&data%5BUser%5D%5Bkeep%5D=1&x=136&y=24"
     (let*-values
         ([(status header1 body)
-          (http-post "www.j-comi.jp" "/userlogin/index/"
+          (http-post "www.zeppan.com" "/login"
                      post-data
                      :Content-Type "application/x-www-form-urlencoded"
                      :secure #t
                      :redirect-handler #f)]
          [(status header2 body)
-          (http-get "r18.j-comi.jp" "/attention/r18/yes"
-                    :Referer "http://r18.j-comi.jp/attention/r18vw"
+          (http-get "r18.zeppan.com" "/attention/r18/yes"
+                    :Referer "http://r18.zeppan.com/attention/r18vw"
                     :redirect-handler #f
                     :Cookie (construct-request-cookie
                              (header->cookies header1)))])
@@ -71,8 +74,8 @@
 (define (get number)
   (let*-values
       ([(status header body)
-        (http-get "vw.j-comi.jp" #`"/murasame/view/,|number|/p:1"
-                  :Referer "http://r18.j-comi.jp/attention/r18vw"
+        (http-get "vw.zeppan.com" #`"/murasame/view/,|number|/p:1"
+                  :Referer "http://r18.zeppan.com/attention/r18vw"
                   :redirect-handler #t
                   :Cookie (construct-request-cookie (session-id))
                   )]
@@ -81,21 +84,21 @@
                    (session-id))]
        [(dataset) (body->dataset body)]
        [(s h b)
-        (http-get "vw.j-comi.jp" (body->app body)
+        (http-get "vw.zeppan.com" (body->app body)
                   :cookie (construct-request-cookie cookies))]
        [(serial) (body->serial b)]
        [(status header body)
-        (http-post "vw.j-comi.jp"
+        (http-post "vw.zeppan.com"
                    #`"/murasame/pages/,|number|"
                    `((__ticket ,(~ cookies "murasame!__ticket"))
                      (__dataset ,dataset)
                      (__serial ,serial))
                    :Cookie (construct-request-cookie cookies)
-                   :Referer #`"http://vw.j-comi.jp/murasame/view/,|number|/p:1"
+                   :Referer #`"http://vw.zeppan.com/murasame/view/,|number|/p:1"
                    :Content-Type "application/x-www-form-urlencoded"
                    :X-Requested-With "XMLHttpRequest")])
     (values (parse-json-string body)
-            (assoc-ref cookies "_J-COMIC_"))))
+            (assoc-ref cookies "_ZMANGA_"))))
 
 (define (files x)
   (filter-map (^[x] (assoc-ref x "file"))
@@ -124,7 +127,7 @@
   (define parallel-map map)])
 
 (define (path-split url)
-  (let1 m (#/^http:\/\/([^\/]+)(\/.+)$/ url)
+  (let1 m (#/^https:\/\/([^\/]+)(\/.+)$/ url)
     (values (m 1) (m 2))))
 
 (define (sanitize title)
@@ -140,8 +143,7 @@
 (define (download-img domain path x cookie)
   (receive (status header body)
       (http-get domain
-                (string-append path "st/" x)
-                :Cookie #`"_J-COMIC_=,|cookie|")
+                (string-append path "st/" x))
     body))
 
 (define (usage cmd)
