@@ -39,14 +39,13 @@
                 #f)))
    header))
 
-(define (body->dataset body)
-  ((#/<input type=\"hidden\" value=\"([^\"]+)\" name=\"__dataset\"/ body) 1))
-
 (define (body->serial body)
   ((#/var __serial = \"([^\"]+)\";/ body) 1))
 
 (define (body->app body)
-  ((#/\/murasame\/app.js\?V=[^\"]+/ body) 0))
+  (if-let1 m (#/\/virgo\/app.js\?V=[^\"]+/ body)
+    (m 0)
+    (error "You are not premium member")))
 
 (define session-id (make-parameter #f))
 
@@ -54,14 +53,14 @@
   (let1 post-data #`"_method=POST&data%5BUser%5D%5Bemail%5D=,(uri-encode-string *id*)&data%5BUser%5D%5Bpasswd%5D=,(uri-encode-string *pass*)&data%5BUser%5D%5Breferer%5D=1&data%5BUser%5D%5Bkeep%5D=0&data%5BUser%5D%5Bkeep%5D=1&x=136&y=24"
     (let*-values
         ([(status header1 body)
-          (http-post "www.zeppan.com" "/login"
+          (http-post "www.mangaz.com" "/login"
                      post-data
                      :Content-Type "application/x-www-form-urlencoded"
                      :secure #t
                      :redirect-handler #f)]
          [(status header2 body)
-          (http-get "r18.zeppan.com" "/attention/r18/yes"
-                    :Referer "http://r18.zeppan.com/attention/r18vw"
+          (http-get "r18.mangaz.com" "/attention/r18/yes"
+                    :Referer "http://r18.mangaz.com/attention/r18"
                     :redirect-handler #f
                     :Cookie (construct-request-cookie
                              (header->cookies header1)))])
@@ -74,39 +73,40 @@
 (define (get number)
   (let*-values
       ([(status header body)
-        (http-get "vw.zeppan.com" #`"/murasame/view/,|number|/p:1"
-                  :Referer "http://r18.zeppan.com/attention/r18vw"
+        (http-get "vw.mangaz.com" #`"/virgo/view/,|number|"
+                  :Referer "http://vw.mangaz.com/book/detail/,|number|"
                   :redirect-handler #t
                   :Cookie (construct-request-cookie (session-id))
                   )]
        [(cookies) (append
                    (header->cookies header)
                    (session-id))]
-       [(dataset) (body->dataset body)]
        [(s h b)
-        (http-get "vw.zeppan.com" (body->app body)
-                  :cookie (construct-request-cookie cookies))]
+        (let1 app (body->app body)
+          (http-get "vw.mangaz.com" app
+                    :cookie (construct-request-cookie cookies)))]
        [(serial) (body->serial b)]
        [(status header body)
-        (http-post "vw.zeppan.com"
-                   #`"/murasame/pages/,|number|"
-                   `((__ticket ,(~ cookies "murasame!__ticket"))
-                     (__dataset ,dataset)
+        (http-post "vw.mangaz.com"
+                   #`"/virgo/document/,|number|.json"
+                   `((__ticket ,(~ cookies "virgo!__ticket"))
                      (__serial ,serial))
                    :Cookie (construct-request-cookie cookies)
-                   :Referer #`"http://vw.zeppan.com/murasame/view/,|number|/p:1"
+                   :Referer #`"http://vw.mangaz.com/virgo/document/,|number|.json"
                    :Content-Type "application/x-www-form-urlencoded"
                    :X-Requested-With "XMLHttpRequest")])
     (values (parse-json-string body)
-            (assoc-ref cookies "_ZMANGA_"))))
+            (assoc-ref cookies "_MANGAZ_"))))
 
 (define (files x)
-  (filter-map (^[x] (assoc-ref x "file"))
-              (~ x "_doc" "Pages")))
+  (filter values
+          (vector-map (^[x] (assoc-ref x "file"))
+                      (~ x "_doc" "Images"))))
 
 (define (title x) (~ x "_doc" "Book" "title"))
 (define (volume x) (~ x "_doc" "Book" "volume"))
 (define (base x) (~ x "_doc" "Location" "base"))
+(define (quality x) (~ x "_doc" "Location" "hq"))
 
 (define (authors x)
   (string-join
@@ -140,10 +140,10 @@
         lst)
     (zip-close za)))
 
-(define (download-img domain path x cookie)
+(define (download-img domain q path x cookie)
   (receive (status header body)
       (http-get domain
-                (string-append path "st/" x))
+                (string-append path q x))
     body))
 
 (define (usage cmd)
@@ -155,14 +155,17 @@
   (let*-values ([(data cookie) (get number)]
                 [(fs) (files data)]
                 [(b) (base data)]
+                [(q) (quality data)]
                 [(d) (receive(domain path) (path-split b)
                        (parallel-map
-                        (^[x] (cons x (download-img domain path x cookie)))
+                        (^[x] (cons x (download-img domain q path x cookie)))
                         fs))])
     (zip-encode
       (sanitize
        (let* ((vol (volume data))
-              (vols (if (eq? 'null vol) "" #`" 第,|vol|巻")))
+              (vols (if (or (eq? 'null vol) (equal? "" vol))
+                        ""
+                        #`" 第,|vol|巻")))
          #`"[,(authors data)] ,(title data),|vols|.zip"))
      (map (^[x] (list (car x) (cdr x))) d))))
 
