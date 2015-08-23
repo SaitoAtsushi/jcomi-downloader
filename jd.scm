@@ -70,7 +70,7 @@
   (parameterize ((session-id (login id password)))
     (thunk)))
 
-(define (get number)
+(define (get number :optional (try-count 0))
   (let*-values
       ([(status header body)
         (http-get "vw.mangaz.com" #`"/virgo/view/,|number|"
@@ -95,8 +95,13 @@
                    :Referer #`"http://vw.mangaz.com/virgo/document/,|number|.json"
                    :Content-Type "application/x-www-form-urlencoded"
                    :X-Requested-With "XMLHttpRequest")])
-    (values (parse-json-string body)
-            (assoc-ref cookies "_MANGAZ_"))))
+    (if (string=? "200" status)
+        (values (parse-json-string body)
+                (assoc-ref cookies "_MANGAZ_"))
+        (if (< try-count 1)
+            (begin (session-id (login *id* *pass*))
+                   (get number (+ 1 try-count)))
+            (error "Retry, but failed.")))))
 
 (define (files x)
   (filter values
