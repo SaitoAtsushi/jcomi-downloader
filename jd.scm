@@ -168,9 +168,10 @@
     (zip-encode
       (sanitize
        (let* ((vol (volume data))
-              (vols (if (or (eq? 'null vol) (equal? "" vol))
-                        ""
-                        #`" 第,|vol|巻")))
+              (vols (cond
+                     ((or (eq? 'null vol) (equal? "" vol)) "")
+                     ((#/^[0-9]+$/ vol) #`" 第,|vol|巻")
+                     (else #`" ,|vol|"))))
          #`"[,(authors data)] ,(title data),|vols|.zip"))
      (map (^[x] (list (car x) (cdr x))) d))))
 
